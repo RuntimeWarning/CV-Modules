@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 '''
@@ -143,3 +144,48 @@ def spectral_norm(module, mode=True):
         return nn.utils.spectral_norm(module)
 
     return module
+
+
+'''
+Paper: `MOSO: Decomposing MOtion, Scene and Object for Video Prediction`
+'''
+class ResidualStack(nn.Module):
+    def __init__(self, num_hiddens, num_residual_layers, num_residual_hiddens, add_BN=False):
+        super(ResidualStack, self).__init__()
+
+        self._num_hiddens = num_hiddens
+        self._num_residual_layers = num_residual_layers
+        self._num_residual_hiddens = num_residual_hiddens
+
+        self._layers = nn.ModuleList()
+        if add_BN is True:
+            for i in range(num_residual_layers):
+                curlayer = nn.Sequential(
+                    nn.Conv2d(num_hiddens, num_residual_hiddens,
+                              kernel_size=3, stride=1, padding=1),
+                    nn.BatchNorm2d(num_residual_hiddens),
+                    nn.GELU(),
+                    nn.Conv2d(num_residual_hiddens, num_hiddens,
+                              kernel_size=1, stride=1, padding=0),
+                    nn.BatchNorm2d(num_hiddens),
+                    nn.GELU(),
+                )
+                self._layers.append(curlayer)
+        else:
+            for i in range(num_residual_layers):
+                curlayer = nn.Sequential(
+                    nn.Conv2d(num_hiddens, num_residual_hiddens,
+                              kernel_size=3, stride=1, padding=1),
+                    nn.GELU(),
+                    nn.Conv2d(num_residual_hiddens, num_hiddens,
+                              kernel_size=1, stride=1, padding=0),
+                    nn.GELU()
+                )
+                self._layers.append(curlayer)
+
+    def forward(self, inputs):
+        h = inputs
+        for layer in self._layers:
+            z = layer(h)
+            h = h + z
+        return F.gelu(h)
